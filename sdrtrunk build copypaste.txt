@@ -1,0 +1,6 @@
+cd "C:\Users\Tim's Surface\Downloads\sdrtrunk-master"
+set JAVA_HOME=C:\Java\LibericaJDK-22-Full
+gradlew.bat -Dorg.gradle.java.home=C:\\Java\\LibericaJDK-22-Full -version
+gradlew.bat -Dorg.gradle.java.home=C:\\Java\\LibericaJDK-22-Full clean build
+gradlew.bat -Dorg.gradle.java.home=C:\\Java\\LibericaJDK-22-Full installDist
+gradlew.bat -Dorg.gradle.java.home=C:\\Java\\LibericaJDK-22-Full run
