@@ -60,6 +60,7 @@ import io.github.dsheirer.gui.playlist.alias.identifier.EmptyIdentifierEditor;
 import io.github.dsheirer.gui.playlist.alias.identifier.IdentifierEditor;
 import io.github.dsheirer.gui.playlist.alias.identifier.IdentifierEditorFactory;
 import io.github.dsheirer.icon.Icon;
+import io.github.dsheirer.gui.editor.AudioOutputDeviceEditor;
 import io.github.dsheirer.playlist.PlaylistManager;
 import io.github.dsheirer.preference.PreferenceType;
 import io.github.dsheirer.preference.UserPreferences;
@@ -158,6 +159,7 @@ public class AliasItemEditor extends Editor<Alias>
     private VBox mIdentifierEditorBox;
     private TextField mStreamAsTalkgroupField;
     private TextFormatter<Integer> mStreamAsIntegerTextFormatter = new IntegerFormatter(1,0xFFFF);
+    private AudioOutputDeviceEditor mAudioOutputDeviceEditor;
 
     private Map<AliasIDType,IdentifierEditor> mIdentifierEditorMap = new HashMap<>();
     private EmptyIdentifierEditor mEmptyIdentifierEditor = new EmptyIdentifierEditor();
@@ -244,6 +246,7 @@ public class AliasItemEditor extends Editor<Alias>
         getActionsList().setDisable(disable);
         getActionsList().getItems().clear();
         getAddActionButton().setDisable(disable);
+        getAudioOutputDeviceEditor().setDisable(disable);
 
         updateStreamViews();
 
@@ -297,6 +300,8 @@ public class AliasItemEditor extends Editor<Alias>
                     }
                 }
             }
+
+            getAudioOutputDeviceEditor().setAlias(alias);
 
             for(AliasAction original: alias.getAliasActions())
             {
@@ -454,6 +459,24 @@ public class AliasItemEditor extends Editor<Alias>
         }
 
         return mStreamAsTalkgroupField;
+    }
+
+    /**
+     * Editor for selecting audio output device (VAC) per alias
+     */
+    private AudioOutputDeviceEditor getAudioOutputDeviceEditor()
+    {
+        if(mAudioOutputDeviceEditor == null)
+        {
+            mAudioOutputDeviceEditor = new AudioOutputDeviceEditor();
+            mAudioOutputDeviceEditor.modifiedProperty().addListener((obs, old, newVal) -> {
+                if(newVal)
+                {
+                    modifiedProperty().set(true);
+                }
+            });
+        }
+        return mAudioOutputDeviceEditor;
     }
 
     private VBox getTitledPanesBox()
@@ -861,6 +884,12 @@ public class AliasItemEditor extends Editor<Alias>
     private void updateStreamViews()
     {
         Platform.runLater(() -> {
+            // === FIX: Skip refresh if user has unsaved modifications to prevent reverting changes ===
+            if(modifiedProperty().get())
+            {
+                return;
+            }
+
             getAvailableStreamsView().getItems().clear();
             getSelectedStreamsView().getItems().clear();
             getAvailableStreamsView().setDisable(getItem() == null);
@@ -1080,6 +1109,15 @@ public class AliasItemEditor extends Editor<Alias>
             mTextFieldPane.getChildren().add(iconLabel);
             GridPane.setConstraints(getIconNodeComboBox(), 5, row, 3, 1);
             mTextFieldPane.getChildren().add(getIconNodeComboBox());
+
+            // Audio Output Device (VAC routing)
+            Label audioOutputLabel = new Label("Audio Output");
+            GridPane.setHalignment(audioOutputLabel, HPos.RIGHT);
+            GridPane.setConstraints(audioOutputLabel, 0, ++row);
+            mTextFieldPane.getChildren().add(audioOutputLabel);
+            GridPane.setConstraints(getAudioOutputDeviceEditor(), 1, row, 7, 1);
+            GridPane.setHgrow(getAudioOutputDeviceEditor(), Priority.ALWAYS);
+            mTextFieldPane.getChildren().add(getAudioOutputDeviceEditor());
         }
 
         return mTextFieldPane;

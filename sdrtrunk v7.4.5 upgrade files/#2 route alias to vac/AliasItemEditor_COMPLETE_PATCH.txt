@@ -1,0 +1,136 @@
+# AliasItemEditor.java - Complete Patch Instructions
+
+File Location: src\main\java\io\github\dsheirer\gui\playlist\alias\AliasItemEditor.java
+
+## CHANGE 1: Add Import (around line 62)
+
+FIND:
+```java
+import io.github.dsheirer.icon.Icon;
+```
+
+ADD BELOW IT:
+```java
+import io.github.dsheirer.gui.editor.AudioOutputDeviceEditor;
+```
+
+---
+
+## CHANGE 2: Add Field Declaration (around line 155)
+
+FIND:
+```java
+private TextFormatter<Integer> mStreamAsIntegerTextFormatter = new IntegerFormatter(1,0xFFFF);
+```
+
+ADD BELOW IT:
+```java
+    private AudioOutputDeviceEditor mAudioOutputDeviceEditor;
+```
+
+---
+
+## CHANGE 3: Add Getter Method (around line 500, BEFORE getStreamAsTalkgroupField)
+
+ADD THIS ENTIRE METHOD:
+```java
+    private AudioOutputDeviceEditor getAudioOutputDeviceEditor()
+    {
+        if(mAudioOutputDeviceEditor == null)
+        {
+            mAudioOutputDeviceEditor = new AudioOutputDeviceEditor();
+            // Bind modified property so Save button activates
+            mAudioOutputDeviceEditor.modifiedProperty().addListener((obs, old, newVal) -> {
+                if(newVal) {
+                    modifiedProperty().set(true);
+                }
+            });
+        }
+        return mAudioOutputDeviceEditor;
+    }
+```
+
+---
+
+## CHANGE 4: Update setItem() - Add setDisable (around line 240)
+
+FIND:
+```java
+        getAddActionButton().setDisable(disable);
+```
+
+ADD BELOW IT:
+```java
+        getAudioOutputDeviceEditor().setDisable(disable);
+```
+
+---
+
+## CHANGE 5: Update setItem() - Add setAlias call (around line 300)
+
+FIND:
+```java
+            }
+        }
+
+        for(AliasAction original: alias.getAliasActions())
+```
+
+CHANGE TO:
+```java
+            }
+        }
+
+        getAudioOutputDeviceEditor().setAlias(alias);
+
+        for(AliasAction original: alias.getAliasActions())
+```
+
+---
+
+## CHANGE 6: Add to GridPane Layout (around line 1240, in getTextFieldPane method)
+
+FIND:
+```java
+        mTextFieldPane.getChildren().add(getIconNodeComboBox());
+```
+
+ADD BELOW IT:
+```java
+
+        // Audio Output Device
+        Label audioOutputLabel = new Label("Audio Output");
+        GridPane.setHalignment(audioOutputLabel, HPos.RIGHT);
+        GridPane.setConstraints(audioOutputLabel, 0, ++row);
+        mTextFieldPane.getChildren().add(audioOutputLabel);
+        GridPane.setConstraints(getAudioOutputDeviceEditor(), 1, row, 7, 1);
+        GridPane.setHgrow(getAudioOutputDeviceEditor(), Priority.ALWAYS);
+        mTextFieldPane.getChildren().add(getAudioOutputDeviceEditor());
+```
+
+---
+
+# Summary of Changes
+
+Total changes: 6 additions
+Total lines added: ~30
+Estimated time: 5-10 minutes
+
+After making these changes:
+1. Save the file
+2. Run: gradlew.bat clean build
+3. Test the alias editor - you should see an "Audio Output" dropdown
+
+---
+
+# Verification
+
+After editing, verify:
+- [ ] Import added at top of file
+- [ ] Field declaration added
+- [ ] Getter method added
+- [ ] setDisable call added in setItem()
+- [ ] setAlias call added in setItem()
+- [ ] GridPane layout additions added in getTextFieldPane()
+- [ ] File compiles without errors
+- [ ] Audio Output dropdown appears in alias editor

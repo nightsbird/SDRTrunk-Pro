@@ -50,13 +50,15 @@ import org.apache.commons.math3.stat.descriptive.moment.StandardDeviation;
 public class P25P1DemodulatorC4FM
 {
     private static final float EQUALIZER_LOOP_GAIN = 0.15f;
-    private static final float EQUALIZER_MAXIMUM_PLL = (float)(Math.PI / 3.0); //+/- 800 Hz
+    private static final float EQUALIZER_MAXIMUM_PLL = (float)(Math.PI / 2.5); //+/- 960 Hz (widened from PI/3 for weak/offset signals)
     private static final float EQUALIZER_MAXIMUM_GAIN = 1.25f;
     private static final float EQUALIZER_RECALIBRATE_THRESHOLD = (float)(Math.PI / 8.0);
     private static final float SOFT_SYMBOL_QUADRANT_BOUNDARY = (float)(Math.PI / 2.0);
-    private static final float SYNC_THRESHOLD_DETECTION = 80;
-    private static final float SYNC_THRESHOLD_OPTIMIZED = 80;
-    private static final float SYNC_THRESHOLD_EQUALIZED = 110;
+    // Adaptive sync thresholds: detection/optimized lowered to improve weak-signal sensitivity.
+    // EQUALIZED is the NID-validated acceptance floor; keep it higher to avoid false frames.
+    private static final float SYNC_THRESHOLD_DETECTION = 65;   // Was 80; lowered for weak signal initial capture
+    private static final float SYNC_THRESHOLD_OPTIMIZED = 65;   // Was 80; lowered to match detection threshold
+    private static final float SYNC_THRESHOLD_EQUALIZED = 95;   // Was 110; lowered slightly, NID BCH still validates
     private static final float TWO_PI = (float)(Math.PI * 2.0);
     private static final float[] SYNC_PATTERN_SYMBOLS = P25P1SyncDetector.syncPatternToSymbols();
     private static final int BUFFER_WORKSPACE_LENGTH = 1024;
@@ -322,7 +324,7 @@ public class P25P1DemodulatorC4FM
     public void setSamplesPerSymbol(float samplesPerSymbol)
     {
         mSamplesPerSymbol = samplesPerSymbol;
-        mMaxFineSyncTimingAdjustment = samplesPerSymbol * .2; // 1/5th of a symbol period
+        mMaxFineSyncTimingAdjustment = samplesPerSymbol * 0.28; // ~1/4 symbol period (was 0.20); wider for simulcast timing drift
         mNoiseStandardDeviationThreshold = Dibit.D01_PLUS_3.getIdealPhase() * 2 / mSamplesPerSymbol * 1.2; //120% of optimal
         mSamplePoint = samplesPerSymbol;
         mSamplePointAdjustmentMax = samplesPerSymbol / 2;
@@ -801,7 +803,8 @@ public class P25P1DemodulatorC4FM
             double offset = bufferOffset + additionalOffset;
 
             //Reject any sync detections where the sample:sample standard deviation exceeds the noise threshold.
-            if(isNoisy(offset))
+            //In fine sync mode we already have valid timing, so skip the noise gate to avoid dropping fading frames.
+            if(!mFineSync && isNoisy(offset))
             {
                 return INVALID_SYNC_DETECTION;
             }
@@ -809,7 +812,7 @@ public class P25P1DemodulatorC4FM
             //Find the optimal symbol timing
             boolean fineSync = mFineSync;
             double samplesPerSymbol = mSamplesPerSymbol;
-            double stepSize = samplesPerSymbol / (fineSync ? 16.0 : 8.0); //Start at 1/8th for coarse & 1/16th for fine
+            double stepSize = samplesPerSymbol / (fineSync ? 16.0 : 12.0); //Start at 1/12th for coarse (was 1/8) & 1/16th for fine
             double stepSizeMin = mOptimizeFineIncrement;
             double adjustment = 0.0;
 
@@ -1062,9 +1065,9 @@ public class P25P1DemodulatorC4FM
             mPll = Math.min(mPll, EQUALIZER_MAXIMUM_PLL);
             mPll = Math.max(mPll, -EQUALIZER_MAXIMUM_PLL);
 
-            //Constrain gain between 1.0f and 1.25f
+            //Constrain gain between 0.9f and 1.25f (floor lowered from 1.0 to handle amplitude-attenuated weak signals)
             mGain = Math.min(mGain, EQUALIZER_MAXIMUM_GAIN);
-            mGain = Math.max(mGain, 1.0f);
+            mGain = Math.max(mGain, 0.9f);
             mInitialized = true;
         }
 

@@ -59,7 +59,7 @@ echo if "%%DIRNAME%%" == "" set DIRNAME=.
 echo set APP_BASE_NAME=%%~n0
 echo set APP_HOME=%%DIRNAME%%..
 echo @rem Add default JVM options here. You can also use JAVA_OPTS and SDR_TRUNK_OPTS to pass JVM options to this script.
-echo set DEFAULT_JVM_OPTS="--add-exports=javafx.base/com.sun.javafx.event=ALL-UNNAMED" "--add-exports=java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED" "--add-modules=jdk.incubator.vector" "--enable-preview" "--enable-native-access=ALL-UNNAMED" "--enable-native-access=javafx.graphics" "-Dprism.order=sw"
+echo set DEFAULT_JVM_OPTS="--add-exports=javafx.base/com.sun.javafx.event=ALL-UNNAMED" "--add-exports=java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED" "--add-modules=jdk.incubator.vector" "--enable-preview" "--enable-native-access=ALL-UNNAMED" "--enable-native-access=javafx.graphics" "-Dprism.order=sw" "-Xms2g" "-Xmx2g" "-XX:+UseG1GC"
 echo set JAVA_HOME="%%APP_HOME%%"
 echo set JAVA_EXE=%%JAVA_HOME%%/bin/java.exe
 echo set JAVA_EXE="%%JAVA_EXE:"=%%"

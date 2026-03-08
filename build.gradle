@@ -81,6 +81,7 @@ dependencies {
     implementation 'com.jidesoft:jide-oss:3.6.18'
     implementation 'com.miglayout:miglayout-swing:11.4.2'
     implementation 'com.mpatric:mp3agic:0.9.1'
+	implementation 'com.sun.mail:jakarta.mail:2.0.1'
     implementation 'commons-io:commons-io:2.21.0'
     implementation 'eu.hansolo:charts:1.0.5'
     implementation 'io.github.dsheirer:radio-reference-api:18.0.0'
@@ -91,6 +92,7 @@ dependencies {
     implementation 'org.apache.commons:commons-compress:1.28.0'
     implementation 'org.apache.commons:commons-lang3:3.19.0'
     implementation 'org.apache.commons:commons-math3:3.6.1'
+    implementation 'io.github.jaredmdobson:concentus:1.0.2'
     implementation 'org.apache.commons:commons-csv:1.14.1'
     implementation 'org.apache.mina:mina-core:2.2.4'
     implementation 'org.apache.mina:mina-http:2.2.4'
@@ -133,7 +135,10 @@ def jvmArgsWindows =
          '--enable-preview',
          '--enable-native-access=ALL-UNNAMED',
          '--enable-native-access=javafx.graphics',
-         '-Djava.library.path=c:\\Program Files\\SDRplay\\API\\x64']
+         '-Djava.library.path=c:\\Program Files\\SDRplay\\API\\x64',
+         '-Xms2g',
+         '-Xmx2g',
+         '-XX:+UseG1GC']
 
 /**
  * JVM Arguments for running the application on Linux.
@@ -143,7 +148,10 @@ def jvmArgsLinux =
          '--add-modules=jdk.incubator.vector',
          '--enable-preview',
          '--enable-native-access=javafx.graphics',
-         '--enable-native-access=ALL-UNNAMED']
+         '--enable-native-access=ALL-UNNAMED',
+         '-Xms2g',
+         '-Xmx2g',
+         '-XX:+UseG1GC']
 
 application {
     mainClass = "io.github.dsheirer.gui.SDRTrunk"
