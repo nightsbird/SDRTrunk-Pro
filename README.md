@@ -1,41 +1,11 @@
-SDRTrunk-Pro is a heavily modified fork of SDRTrunk, an open-source Java-based software-defined radio trunk tracking application. This fork adds numerous enhancements focused on stability, audio routing, and public safety monitoring.
+This SDRTrunk-Pro is a modified fork of SDRTrunk-Pro and ultimately SDRTrunk, an open-source Java-based software-defined radio trunk tracking application. This fork adds mumble broadcaster support.
 
-Enhancements Over Stock SDRTrunk
-🔊 Audio
-
-Per-Alias Audio Device Routing — Route individual talkgroups/aliases to specific Virtual Audio Cable (VAC) devices
-NBFM Audio Filter Pipeline — 6-stage filter chain (low-pass, bass boost, FM de-emphasis, voice enhancement, noise gate, output gain) with JavaFX UI controls
-Silence Buffer Click Prevention — Eliminates audio artifacts when switching between channels
-
-📡 Decoder Improvements
-
-Ignore Unaliased Talkgroups — P25 Phase 1, P25 Phase 2, and DMR decoders can skip unaliased talkgroups to conserve tuner resources
-DMR Carrier Offset Processor — Fixes PPM correction corruption on shared RTL-SDR tuners via a dedicated DMRCarrierOffsetProcessor
-DMR Tier III Trunking Fixes — Corrected missing CSBK opcodes, vendor-specific opcodes, and unprocessed AnnounceChannelFrequency messages
-P25 MessageFramer Fix — Fixed ArrayIndexOutOfBoundsException off-by-one error in P25P1MessageFramer
-
-🛡️ Watchdogs & Stability
-
-Audio Activity Watchdog — Sends Gmail SMTP email alerts when no decoded audio is received for a configurable period, with repeat-alert behavior and JavaFX preferences UI
-Stuck Tuner Watchdog — Detects RSP1B noise blanker lockup in P25 Phase 1 decoders with separate LSM and C4FM threshold profiles
-Fixed JVM Heap — -Xms2g -Xmx2g with G1GC to eliminate GC pause-induced P25 sync loss
-ChannelMetadataModel Race Condition Fix — Resolved concurrency crash and null check bug in Icon.java
-
+Enhancements Over Stock SDRTrunk-Pro
 🎙️ Streaming
 
-Zello Broadcasting — Stream decoded audio to Zello channels with WebSocket stability fixes, race condition handling, and per-channel routing
-ThinLine Radio Streaming — Integrated ThinLine Radio as a streaming destination alongside rdio-scanner
+Mumble Broadcaster — Stream sent to mumble server. This uses the server conntect password and not certificates at present. Ability to use multiple broadcasters for specific talkgroups to specific channels. 
 
-💾 UI & Persistence
-
-Now Playing Persistence — Events/Messages tab filter states and history slider values survive application restarts
-Window Layout Persistence — Window positions and split pane divider states are saved and restored![Gradle Build](https://github.com/dsheirer/sdrtrunk/actions/workflows/gradle.yml/badge.svg)
-![Nightly Release](https://github.com/dsheirer/sdrtrunk/actions/workflows/nightly.yml/badge.svg)
-
-# MacOS Tahoe 26.1 Users - Attention:
-Changes to USB support in Tahoe version 26.x cause sdrtrunk to fail to launch.  Do the following to install the latest libusb and create a symbolic link and then use the nightly build which includes an updated usb4java native library for Tahoe with ARM processor.  There may still be issue(s) with MacOS accessing your USB SDR tuners.
-
-```
+``
 brew install libusb --HEAD
 cd /opt
 sudo mkdir local
