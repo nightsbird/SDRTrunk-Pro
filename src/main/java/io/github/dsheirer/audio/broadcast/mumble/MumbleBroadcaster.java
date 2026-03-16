@@ -556,7 +556,7 @@ catch(Exception tlsEx)
 
     private void handleControlMessage(short type, byte[] payload)
     {
-	mLog.info("{}Message type={} length={}", tag(), type, payload.length);
+	mLog.debug("{}Message type={} length={}", tag(), type, payload.length);
         try
         {
             if(type == MSG_SERVER_SYNC)
