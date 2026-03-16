@@ -42,6 +42,8 @@ import io.github.dsheirer.audio.broadcast.zello.ZelloBroadcaster;
 import io.github.dsheirer.audio.broadcast.zello.ZelloConfiguration;
 import io.github.dsheirer.audio.broadcast.zello.ZelloConsumerBroadcaster;
 import io.github.dsheirer.audio.broadcast.zello.ZelloConsumerConfiguration;
+import io.github.dsheirer.audio.broadcast.mumble.MumbleBroadcaster;
+import io.github.dsheirer.audio.broadcast.mumble.MumbleConfiguration;
 import io.github.dsheirer.audio.convert.ISilenceGenerator;
 import io.github.dsheirer.audio.convert.InputAudioFormat;
 import io.github.dsheirer.audio.convert.MP3Setting;
@@ -103,6 +105,9 @@ public class BroadcastFactory
                 case ZELLO:
                     return new ZelloConsumerBroadcaster((ZelloConsumerConfiguration) configuration,
                             inputAudioFormat, mp3Setting, aliasModel);
+                case MUMBLE:
+                    return new MumbleBroadcaster((MumbleConfiguration) configuration,
+                            inputAudioFormat, mp3Setting, aliasModel);
                 case UNKNOWN:
                 default:
                     mLog.info("Unrecognized broadcastAudio configuration: " + configuration.getBroadcastFormat().name());
@@ -146,6 +151,8 @@ public class BroadcastFactory
                 return new ZelloConfiguration(format);
             case ZELLO:
                 return new ZelloConsumerConfiguration(format);
+            case MUMBLE:
+                return new MumbleConfiguration(format);
             case UNKNOWN:
             default:
                 mLog.info("Unrecognized broadcastAudio server type: " + serverType.name());

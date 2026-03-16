@@ -58,6 +58,8 @@ public class StreamEditorFactory
                 return new ZelloEditor(playlistManager);
             case ZELLO:
                 return new ZelloConsumerEditor(playlistManager);
+            case MUMBLE:
+                return new MumbleEditor(playlistManager);
             default:
                 return new UnknownStreamEditor(playlistManager);
         }

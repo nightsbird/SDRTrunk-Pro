@@ -39,6 +39,11 @@ public enum BroadcastServerType
     SHOUTCAST_V2("Shoutcast v2.x", "images/shoutcast.png"),
 
     /**
+     * Mumble Streaming
+     */
+    MUMBLE("Mumble", null),
+
+    /**
      * Zello Work - real-time audio streaming to Zello Work channels
      */
     ZELLO_WORK("Zello Work", null),
