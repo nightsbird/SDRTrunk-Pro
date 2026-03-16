@@ -359,25 +359,39 @@ public class MumbleBroadcaster extends AbstractAudioBroadcaster<MumbleConfigurat
     private void flushResampleBuffer(boolean endOfTransmission)
     {
         if(mResampleBufferPos <= 0) return;
-        for(int i = mResampleBufferPos; i < FRAME_SIZE_SAMPLES; i++)
-            mResampleBuffer[i] = 0;
-        encodeAndSendFrame(endOfTransmission);
-        mResampleBufferPos = 0;
+        try
+        {
+            for(int i = mResampleBufferPos; i < FRAME_SIZE_SAMPLES; i++)
+                mResampleBuffer[i] = 0;
+            encodeAndSendFrame(endOfTransmission);
+        }
+        catch(Exception e)
+        {
+            mLog.warn("{}Error flushing resample buffer - discarding", tag(), e);
+        }
+        finally
+        {
+            mResampleBufferPos = 0;
+        }
     }
 
     private void encodeAndSendFrame(boolean endOfTransmission)
     {
         if(!mConnected.get()) return;
-
         try
         {
             int encoded = mOpusEncoder.encode(mResampleBuffer, 0, FRAME_SIZE_SAMPLES,
                 mOpusOutputBuffer, 0, mOpusOutputBuffer.length);
-
-            if(encoded > 0)
-            {
-                sendVoicePacket(mOpusOutputBuffer, encoded, endOfTransmission);
-            }
+            if(encoded > 0) sendVoicePacket(mOpusOutputBuffer, encoded, endOfTransmission);
+        }
+        catch(ArrayIndexOutOfBoundsException | AssertionError e)
+        {
+            // Concentus internal resampler can enter a bad state on certain frame
+            // size / sample rate combinations. Reset position and reinitialize encoder.
+            mLog.warn("{}Opus encoder state error - reinitializing ({})", tag(), e.getMessage());
+            mResampleBufferPos = 0;
+            try { initOpusEncoder(); }
+            catch(Exception ex) { mLog.error("{}Failed to reinitialize Opus encoder", tag(), ex); }
         }
         catch(Exception e)
         {
