@@ -116,6 +116,12 @@ dependencies {
 
     //Protobuf for mumble
     implementation 'com.google.protobuf:protobuf-java:3.25.3'
+	
+    // Vosk on-device speech to text
+    implementation 'com.alphacep:vosk:0.3.31+' // use vosk-java for desktop
+	implementation 'net.java.dev.jna:5.7.0'
+    //implementation files('libs/vosk-0.3.50.jar') // see note below
+	//implementation fileTree(dir: 'libs', include: ['*.jar'])
 }
 
 def os = org.gradle.nativeplatform.platform.internal.DefaultNativePlatform.currentOperatingSystem
