@@ -27,11 +27,13 @@
     </encoder>
   </appender>
           
-  <root level="DEBUG">
+  <root level="INFO">
     <appender-ref ref="STDOUT" />
   </root>
 
   <!-- Apache Mina TCP/HTTP library -->
   <logger name="org.apache.mina" level="INFO" />
 
+  <!-- Mumble Broadcaster -->
+  <logger name="io.github.dsheirer.audio.broadcast.mumble" level="INFO"/>
 </configuration>
