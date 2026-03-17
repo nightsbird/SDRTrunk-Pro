@@ -1,6 +1,6 @@
 /*
  * *****************************************************************************
- * Copyright (C) 2014-2026 Dennis Sheirer
+ * Copyright (C) 2026 Jeffrey Dunbar
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,25 +25,31 @@ import io.github.dsheirer.gui.control.IntegerTextField;
 import io.github.dsheirer.playlist.PlaylistManager;
 import javafx.geometry.HPos;
 import javafx.geometry.Insets;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.GridPane;
+import javafx.stage.DirectoryChooser;
+import org.controlsfx.control.ToggleSwitch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.File;
 
 /**
  * Mumble server streaming configuration editor.
  *
  * Fields:
- * - Format:   Read-only display of broadcast type
- * - Enabled:  Toggle to enable/disable this stream
- * - Name:     Display name for this stream configuration
- * - Host:     Mumble server hostname or IP address
- * - Port:     Mumble server port (default 64738)
- * - Username: Bot/client display name on the Mumble server
- * - Password: Optional server password
- * - Channel:  Target channel path (e.g. "Root/Scanner" — blank = root)
+ * - Format / Enabled toggle
+ * - Name
+ * - Host
+ * - Port            (default 64738)
+ * - Username        (bot display name on Mumble server)
+ * - Password        (optional, blank for open servers)
+ * - Channel         (e.g. Root/Scanner, blank = root)
+ * - STT Enabled     (toggle to enable/disable Vosk speech-to-text)
+ * - Vosk Model Path (path to model directory, Browse button included)
  */
 public class MumbleEditor extends AbstractBroadcastEditor<MumbleConfiguration>
 {
@@ -54,12 +60,11 @@ public class MumbleEditor extends AbstractBroadcastEditor<MumbleConfiguration>
     private TextField        mUsernameTextField;
     private PasswordField    mPasswordField;
     private TextField        mChannelTextField;
+    private ToggleSwitch     mVoskEnabledSwitch;
+    private TextField        mVoskModelPathTextField;
+    private Button           mVoskBrowseButton;
     private GridPane         mEditorPane;
 
-    /**
-     * Constructs an instance.
-     * @param playlistManager for accessing the broadcast model
-     */
     public MumbleEditor(PlaylistManager playlistManager)
     {
         super(playlistManager);
@@ -70,19 +75,27 @@ public class MumbleEditor extends AbstractBroadcastEditor<MumbleConfiguration>
     {
         super.setItem(item);
 
-        getHostTextField().setDisable(item == null);
-        getPortTextField().setDisable(item == null);
-        getUsernameTextField().setDisable(item == null);
-        getPasswordField().setDisable(item == null);
-        getChannelTextField().setDisable(item == null);
+        boolean hasItem = item != null;
 
-        if(item != null)
+        getHostTextField().setDisable(!hasItem);
+        getPortTextField().setDisable(!hasItem);
+        getUsernameTextField().setDisable(!hasItem);
+        getPasswordField().setDisable(!hasItem);
+        getChannelTextField().setDisable(!hasItem);
+        getVoskEnabledSwitch().setDisable(!hasItem);
+
+        if(hasItem)
         {
             getHostTextField().setText(item.getHost());
             getPortTextField().set(item.getPort());
             getUsernameTextField().setText(item.getUsername());
             getPasswordField().setText(item.getPassword());
             getChannelTextField().setText(item.getChannel());
+            getVoskEnabledSwitch().setSelected(item.isVoskEnabled());
+            getVoskModelPathTextField().setText(item.getVoskModelPath());
+
+            // Enable/disable path controls based on current toggle state
+            updateVoskPathControls(item.isVoskEnabled());
         }
         else
         {
@@ -91,15 +104,23 @@ public class MumbleEditor extends AbstractBroadcastEditor<MumbleConfiguration>
             getUsernameTextField().setText(null);
             getPasswordField().setText(null);
             getChannelTextField().setText(null);
+            getVoskEnabledSwitch().setSelected(false);
+            getVoskModelPathTextField().setText(null);
+            updateVoskPathControls(false);
         }
 
         modifiedProperty().set(false);
     }
 
-    @Override
-    public void dispose()
+    /** Enable or disable the model path field and browse button based on the STT toggle. */
+    private void updateVoskPathControls(boolean enabled)
     {
+        getVoskModelPathTextField().setDisable(!enabled);
+        getVoskBrowseButton().setDisable(!enabled);
     }
+
+    @Override
+    public void dispose() {}
 
     @Override
     public void save()
@@ -111,8 +132,9 @@ public class MumbleEditor extends AbstractBroadcastEditor<MumbleConfiguration>
             getItem().setUsername(getUsernameTextField().getText());
             getItem().setPassword(getPasswordField().getText());
             getItem().setChannel(getChannelTextField().getText());
+            getItem().setVoskEnabled(getVoskEnabledSwitch().isSelected());
+            getItem().setVoskModelPath(getVoskModelPathTextField().getText());
         }
-
         super.save();
     }
 
@@ -139,7 +161,6 @@ public class MumbleEditor extends AbstractBroadcastEditor<MumbleConfiguration>
             GridPane.setHalignment(formatLabel, HPos.RIGHT);
             GridPane.setConstraints(formatLabel, 0, row);
             mEditorPane.getChildren().add(formatLabel);
-
             GridPane.setConstraints(getFormatField(), 1, row);
             mEditorPane.getChildren().add(getFormatField());
 
@@ -147,7 +168,6 @@ public class MumbleEditor extends AbstractBroadcastEditor<MumbleConfiguration>
             GridPane.setHalignment(enabledLabel, HPos.RIGHT);
             GridPane.setConstraints(enabledLabel, 2, row);
             mEditorPane.getChildren().add(enabledLabel);
-
             GridPane.setConstraints(getEnabledSwitch(), 3, row);
             mEditorPane.getChildren().add(getEnabledSwitch());
 
@@ -156,7 +176,6 @@ public class MumbleEditor extends AbstractBroadcastEditor<MumbleConfiguration>
             GridPane.setHalignment(nameLabel, HPos.RIGHT);
             GridPane.setConstraints(nameLabel, 0, ++row);
             mEditorPane.getChildren().add(nameLabel);
-
             GridPane.setConstraints(getNameTextField(), 1, row);
             mEditorPane.getChildren().add(getNameTextField());
 
@@ -165,7 +184,6 @@ public class MumbleEditor extends AbstractBroadcastEditor<MumbleConfiguration>
             GridPane.setHalignment(hostLabel, HPos.RIGHT);
             GridPane.setConstraints(hostLabel, 0, ++row);
             mEditorPane.getChildren().add(hostLabel);
-
             GridPane.setConstraints(getHostTextField(), 1, row);
             mEditorPane.getChildren().add(getHostTextField());
 
@@ -174,7 +192,6 @@ public class MumbleEditor extends AbstractBroadcastEditor<MumbleConfiguration>
             GridPane.setHalignment(portLabel, HPos.RIGHT);
             GridPane.setConstraints(portLabel, 0, ++row);
             mEditorPane.getChildren().add(portLabel);
-
             GridPane.setConstraints(getPortTextField(), 1, row);
             mEditorPane.getChildren().add(getPortTextField());
 
@@ -183,7 +200,6 @@ public class MumbleEditor extends AbstractBroadcastEditor<MumbleConfiguration>
             GridPane.setHalignment(usernameLabel, HPos.RIGHT);
             GridPane.setConstraints(usernameLabel, 0, ++row);
             mEditorPane.getChildren().add(usernameLabel);
-
             GridPane.setConstraints(getUsernameTextField(), 1, row);
             mEditorPane.getChildren().add(getUsernameTextField());
 
@@ -192,12 +208,9 @@ public class MumbleEditor extends AbstractBroadcastEditor<MumbleConfiguration>
             GridPane.setHalignment(passwordLabel, HPos.RIGHT);
             GridPane.setConstraints(passwordLabel, 0, ++row);
             mEditorPane.getChildren().add(passwordLabel);
-
             GridPane.setConstraints(getPasswordField(), 1, row);
             mEditorPane.getChildren().add(getPasswordField());
-
             Label passwordHint = new Label("(blank for open servers)");
-            GridPane.setHalignment(passwordHint, HPos.LEFT);
             GridPane.setConstraints(passwordHint, 2, row);
             mEditorPane.getChildren().add(passwordHint);
 
@@ -206,16 +219,33 @@ public class MumbleEditor extends AbstractBroadcastEditor<MumbleConfiguration>
             GridPane.setHalignment(channelLabel, HPos.RIGHT);
             GridPane.setConstraints(channelLabel, 0, ++row);
             mEditorPane.getChildren().add(channelLabel);
-
             GridPane.setConstraints(getChannelTextField(), 1, row);
             mEditorPane.getChildren().add(getChannelTextField());
-
             Label channelHint = new Label("e.g. Root/Scanner (blank = root)");
-            GridPane.setHalignment(channelHint, HPos.LEFT);
             GridPane.setConstraints(channelHint, 2, row);
             mEditorPane.getChildren().add(channelHint);
-        }
 
+            // Row 7: STT Enabled toggle
+            Label voskEnabledLabel = new Label("Speech-to-Text");
+            GridPane.setHalignment(voskEnabledLabel, HPos.RIGHT);
+            GridPane.setConstraints(voskEnabledLabel, 0, ++row);
+            mEditorPane.getChildren().add(voskEnabledLabel);
+            GridPane.setConstraints(getVoskEnabledSwitch(), 1, row);
+            mEditorPane.getChildren().add(getVoskEnabledSwitch());
+            Label voskEnabledHint = new Label("Enable Vosk on-device STT");
+            GridPane.setConstraints(voskEnabledHint, 2, row);
+            mEditorPane.getChildren().add(voskEnabledHint);
+
+            // Row 8: Vosk Model Path
+            Label voskLabel = new Label("Vosk Model Path");
+            GridPane.setHalignment(voskLabel, HPos.RIGHT);
+            GridPane.setConstraints(voskLabel, 0, ++row);
+            mEditorPane.getChildren().add(voskLabel);
+            GridPane.setConstraints(getVoskModelPathTextField(), 1, row);
+            mEditorPane.getChildren().add(getVoskModelPathTextField());
+            GridPane.setConstraints(getVoskBrowseButton(), 2, row);
+            mEditorPane.getChildren().add(getVoskBrowseButton());
+        }
         return mEditorPane;
     }
 
@@ -276,5 +306,61 @@ public class MumbleEditor extends AbstractBroadcastEditor<MumbleConfiguration>
             mChannelTextField.textProperty().addListener(mEditorModificationListener);
         }
         return mChannelTextField;
+    }
+
+    private ToggleSwitch getVoskEnabledSwitch()
+    {
+        if(mVoskEnabledSwitch == null)
+        {
+            mVoskEnabledSwitch = new ToggleSwitch();
+            mVoskEnabledSwitch.setDisable(true);
+            mVoskEnabledSwitch.selectedProperty().addListener((observable, oldValue, newValue) -> {
+                // Enable/disable the path controls live as the toggle changes
+                updateVoskPathControls(newValue);
+                modifiedProperty().set(true);
+            });
+        }
+        return mVoskEnabledSwitch;
+    }
+
+    private TextField getVoskModelPathTextField()
+    {
+        if(mVoskModelPathTextField == null)
+        {
+            mVoskModelPathTextField = new TextField();
+            mVoskModelPathTextField.setDisable(true);
+            mVoskModelPathTextField.setPromptText("path to vosk model folder");
+            mVoskModelPathTextField.setPrefWidth(300);
+            mVoskModelPathTextField.textProperty().addListener(mEditorModificationListener);
+        }
+        return mVoskModelPathTextField;
+    }
+
+    private Button getVoskBrowseButton()
+    {
+        if(mVoskBrowseButton == null)
+        {
+            mVoskBrowseButton = new Button("Browse...");
+            mVoskBrowseButton.setDisable(true);
+            mVoskBrowseButton.setOnAction(event -> {
+                DirectoryChooser chooser = new DirectoryChooser();
+                chooser.setTitle("Select Vosk Model Directory");
+
+                String current = getVoskModelPathTextField().getText();
+                if(current != null && !current.isBlank())
+                {
+                    File currentDir = new File(current);
+                    if(currentDir.exists()) chooser.setInitialDirectory(currentDir.getParentFile());
+                }
+
+                File selected = chooser.showDialog(mVoskBrowseButton.getScene().getWindow());
+                if(selected != null)
+                {
+                    getVoskModelPathTextField().setText(selected.getAbsolutePath());
+                    modifiedProperty().set(true);
+                }
+            });
+        }
+        return mVoskBrowseButton;
     }
 }
