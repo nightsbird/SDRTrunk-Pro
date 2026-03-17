@@ -148,7 +148,7 @@ def jvmArgsWindows =
          '--enable-preview',
          '--enable-native-access=ALL-UNNAMED',
          '--enable-native-access=javafx.graphics',
-         '-Djava.library.path=c:\\Program Files\\SDRplay\\API\\x64',
+         '-Djava.library.path=libs;c:\\Program Files\\SDRplay\\API\\x64',
          '-Xms2g',
          '-Xmx2g',
          '-XX:+UseG1GC']
