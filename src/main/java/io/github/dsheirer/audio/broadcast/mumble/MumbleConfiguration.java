@@ -24,6 +24,8 @@ import io.github.dsheirer.audio.broadcast.BroadcastConfiguration;
 import io.github.dsheirer.audio.broadcast.BroadcastFormat;
 import io.github.dsheirer.audio.broadcast.BroadcastServerType;
 import javafx.beans.binding.Bindings;
+import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
 
@@ -36,15 +38,17 @@ import javafx.beans.property.StringProperty;
  * - Username:      The bot/client display name on the Mumble server
  * - Password:      Optional server password (leave blank for open servers)
  * - Channel:       Target channel path (e.g. "Root/Scanner" -- blank = root)
+ * - VoskEnabled:   Toggle to enable/disable on-device speech-to-text
  * - VoskModelPath: Path to Vosk model directory for speech-to-text (optional)
  */
 public class MumbleConfiguration extends BroadcastConfiguration
 {
     private static final int DEFAULT_MUMBLE_PORT = 64738;
 
-    private StringProperty mChannel       = new SimpleStringProperty();
-    private StringProperty mUsername      = new SimpleStringProperty();
-    private StringProperty mVoskModelPath = new SimpleStringProperty();
+    private StringProperty  mChannel       = new SimpleStringProperty();
+    private StringProperty  mUsername      = new SimpleStringProperty();
+    private BooleanProperty mVoskEnabled   = new SimpleBooleanProperty(false);
+    private StringProperty  mVoskModelPath = new SimpleStringProperty();
 
     public MumbleConfiguration()
     {
@@ -86,7 +90,18 @@ public class MumbleConfiguration extends BroadcastConfiguration
     public void setUsername(String username) { mUsername.set(username); }
 
     // ========================================================================
-    // Vosk Model Path (optional — blank disables STT)
+    // Vosk Enabled toggle
+    // ========================================================================
+
+    public BooleanProperty voskEnabledProperty() { return mVoskEnabled; }
+
+    @JacksonXmlProperty(isAttribute = true, localName = "vosk_enabled")
+    public boolean isVoskEnabled() { return mVoskEnabled.get(); }
+
+    public void setVoskEnabled(boolean enabled) { mVoskEnabled.set(enabled); }
+
+    // ========================================================================
+    // Vosk Model Path
     // ========================================================================
 
     public StringProperty voskModelPathProperty() { return mVoskModelPath; }
@@ -96,8 +111,13 @@ public class MumbleConfiguration extends BroadcastConfiguration
 
     public void setVoskModelPath(String path) { mVoskModelPath.set(path); }
 
+    /**
+     * Returns true if STT is enabled, a model path is configured, and the
+     * path is not blank. Both the toggle AND a valid path must be set.
+     */
     public boolean hasVoskModel()
     {
+        if(!isVoskEnabled()) return false;
         String path = getVoskModelPath();
         return path != null && !path.isBlank();
     }
@@ -124,6 +144,7 @@ public class MumbleConfiguration extends BroadcastConfiguration
         copy.setPassword(getPassword());
         copy.setChannel(getChannel());
         copy.setName(getName());
+        copy.setVoskEnabled(isVoskEnabled());
         copy.setVoskModelPath(getVoskModelPath());
         return copy;
     }
