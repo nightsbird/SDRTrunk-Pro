@@ -1,6 +1,6 @@
 /*
  * *****************************************************************************
- * Copyright (C) 2014-2026 Dennis Sheirer
+ * Copyright (C) 2026 Jeffrey Dunbar
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,51 +24,38 @@ import io.github.dsheirer.audio.broadcast.BroadcastConfiguration;
 import io.github.dsheirer.audio.broadcast.BroadcastFormat;
 import io.github.dsheirer.audio.broadcast.BroadcastServerType;
 import javafx.beans.binding.Bindings;
-import javafx.beans.property.IntegerProperty;
-import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
 
 /**
  * Broadcast configuration for Mumble server streaming.
  *
- * Mumble uses the Mumble protocol over TCP (with optional TLS) to stream
- * Opus-encoded audio to a Mumble server channel. Audio is sent as Mumble
- * UDPTunnel voice packets carrying Opus frames.
- *
  * Configuration fields:
- * - Host:     Mumble server hostname or IP address
- * - Port:     Mumble server port (default: 64738)
- * - Username: The bot/client display name on the Mumble server
- * - Password: Optional server password (leave blank for open servers)
- * - Channel:  Target channel path (e.g. "Root/Scanner" — blank = root)
+ * - Host:          Mumble server hostname or IP address
+ * - Port:          Mumble server port (default: 64738)
+ * - Username:      The bot/client display name on the Mumble server
+ * - Password:      Optional server password (leave blank for open servers)
+ * - Channel:       Target channel path (e.g. "Root/Scanner" -- blank = root)
+ * - VoskModelPath: Path to Vosk model directory for speech-to-text (optional)
  */
 public class MumbleConfiguration extends BroadcastConfiguration
 {
     private static final int DEFAULT_MUMBLE_PORT = 64738;
 
-    private StringProperty mChannel = new SimpleStringProperty();
-    private StringProperty mUsername = new SimpleStringProperty();
+    private StringProperty mChannel       = new SimpleStringProperty();
+    private StringProperty mUsername      = new SimpleStringProperty();
+    private StringProperty mVoskModelPath = new SimpleStringProperty();
 
-    /**
-     * Default constructor for Jackson XML deserialization.
-     */
     public MumbleConfiguration()
     {
         this(BroadcastFormat.MP3);
     }
 
-    /**
-     * Public constructor.
-     *
-     * @param format audio format (audio will be re-encoded to Opus for Mumble)
-     */
     public MumbleConfiguration(BroadcastFormat format)
     {
         super(format);
         mPort.set(DEFAULT_MUMBLE_PORT);
 
-        // Rebind validity: host + username required; port > 0
         mValid.unbind();
         mValid.bind(Bindings.and(
             Bindings.isNotEmpty(mHost),
@@ -77,43 +64,42 @@ public class MumbleConfiguration extends BroadcastConfiguration
     }
 
     // ========================================================================
-    // Channel path (optional – blank means root)
+    // Channel
     // ========================================================================
 
-    public StringProperty channelProperty()
-    {
-        return mChannel;
-    }
+    public StringProperty channelProperty() { return mChannel; }
 
     @JacksonXmlProperty(isAttribute = true, localName = "channel")
-    public String getChannel()
-    {
-        return mChannel.get();
-    }
+    public String getChannel() { return mChannel.get(); }
 
-    public void setChannel(String channel)
-    {
-        mChannel.set(channel);
-    }
+    public void setChannel(String channel) { mChannel.set(channel); }
 
     // ========================================================================
-    // Username (display name on Mumble server)
+    // Username
     // ========================================================================
 
-    public StringProperty usernameProperty()
-    {
-        return mUsername;
-    }
+    public StringProperty usernameProperty() { return mUsername; }
 
     @JacksonXmlProperty(isAttribute = true, localName = "username")
-    public String getUsername()
-    {
-        return mUsername.get();
-    }
+    public String getUsername() { return mUsername.get(); }
 
-    public void setUsername(String username)
+    public void setUsername(String username) { mUsername.set(username); }
+
+    // ========================================================================
+    // Vosk Model Path (optional — blank disables STT)
+    // ========================================================================
+
+    public StringProperty voskModelPathProperty() { return mVoskModelPath; }
+
+    @JacksonXmlProperty(isAttribute = true, localName = "vosk_model_path")
+    public String getVoskModelPath() { return mVoskModelPath.get(); }
+
+    public void setVoskModelPath(String path) { mVoskModelPath.set(path); }
+
+    public boolean hasVoskModel()
     {
-        mUsername.set(username);
+        String path = getVoskModelPath();
+        return path != null && !path.isBlank();
     }
 
     // ========================================================================
@@ -138,6 +124,7 @@ public class MumbleConfiguration extends BroadcastConfiguration
         copy.setPassword(getPassword());
         copy.setChannel(getChannel());
         copy.setName(getName());
+        copy.setVoskModelPath(getVoskModelPath());
         return copy;
     }
 }
