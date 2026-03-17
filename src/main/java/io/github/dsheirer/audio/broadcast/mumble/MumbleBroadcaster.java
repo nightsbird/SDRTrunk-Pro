@@ -1,6 +1,6 @@
 /*
  * *****************************************************************************
- * Copyright (C) 2014-2026 Dennis Sheirer
+ * Copyright (C) 2026 Jeffrey Dunbar
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,8 @@
 
 package io.github.dsheirer.audio.broadcast.mumble;
 
+import io.github.dsheirer.alias.Alias;
+import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.audio.broadcast.AbstractAudioBroadcaster;
 import io.github.dsheirer.audio.broadcast.AudioRecording;
@@ -33,6 +35,7 @@ import io.github.dsheirer.audio.broadcast.mumble.proto.MumbleProto.Ping;
 import io.github.dsheirer.audio.broadcast.mumble.proto.MumbleProto.ServerSync;
 import io.github.dsheirer.audio.broadcast.mumble.proto.MumbleProto.UserState;
 import io.github.dsheirer.audio.broadcast.mumble.proto.MumbleProto.Version;
+import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.IdentifierCollection;
 import io.github.dsheirer.util.ThreadPool;
 import io.github.jaredmdobson.concentus.OpusApplication;
@@ -44,11 +47,14 @@ import org.slf4j.LoggerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
+import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.security.cert.X509Certificate;
+import java.util.List;
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -59,24 +65,25 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Real-time audio broadcaster for Mumble servers via the Mumble protocol over TLS TCP.
  *
  * Implements IRealTimeAudioBroadcaster to receive 8 kHz mono float audio buffers
- * in real-time. Audio is upsampled to 16 kHz, Opus-encoded (VOIP application), and
- * sent as Mumble UDPTunnel voice packets containing an Opus voice payload.
+ * in real-time. Audio is upsampled to 16 kHz, Opus-encoded, and sent as Mumble
+ * UDPTunnel voice packets. Simultaneously feeds audio to Vosk for on-device STT.
+ *
+ * At the start of each transmission, a text message is sent to the Mumble channel
+ * containing the FROM radio ID and alias. At the end of each transmission, the
+ * Vosk STT transcript is sent as a second text message.
  *
  * Mumble protocol overview (relevant subset):
  *   1. TLS TCP connection to server:port (default 64738).
  *   2. Exchange Version messages.
  *   3. Send Authenticate (username, password, opus=true).
- *   4. Receive ServerSync -> connection established, session ID known.
+ *   4. Receive ServerSync (type 5) -> connection established, session ID known.
  *   5. Optionally join a channel by matching ChannelState names to the
  *      configured channel path, then sending a UserState with channel_id.
  *   6. Send UDPTunnel packets containing Mumble Opus voice frames.
  *   7. Last frame sets bit 13 of Opus length field to signal end of transmission.
  *
  * Voice packet wire format (Mumble "UDP audio" tunnelled over TCP control channel):
- *
- *     [ 1 byte  ] header = (type << 5) | target
- *                   type   = 4  (Opus audio)
- *                   target = 0  (normal talking)
+ *     [ 1 byte  ] header = (type << 5) | target  (type=4 Opus, target=0 normal)
  *     [ varint  ] sequence number
  *     [ varint  ] opus_length_field = (opus_bytes_len | talking_flag)
  *                   talking_flag bit 13 = 0 while talking, 1 on last frame
@@ -96,7 +103,7 @@ public class MumbleBroadcaster extends AbstractAudioBroadcaster<MumbleConfigurat
     private static final int MUMBLE_SAMPLE_RATE  = 16_000;
     private static final int MUMBLE_CHANNELS     = 1;
     private static final int FRAME_SIZE_MS       = 10;
-    private static final int FRAME_SIZE_SAMPLES  = MUMBLE_SAMPLE_RATE * FRAME_SIZE_MS / 1000; // 960
+    private static final int FRAME_SIZE_SAMPLES  = MUMBLE_SAMPLE_RATE * FRAME_SIZE_MS / 1000; // 160
     private static final int OPUS_BITRATE        = 48_000;
 
     // ---- Mumble protocol message types ----
@@ -104,11 +111,11 @@ public class MumbleBroadcaster extends AbstractAudioBroadcaster<MumbleConfigurat
     private static final short MSG_AUTHENTICATE  = 2;
     private static final short MSG_PING          = 3;
     //private static final short MSG_SERVER_SYNC   = 4;
-    private static final short MSG_SERVER_SYNC   = 5;
+    private static final short MSG_SERVER_SYNC   = 5;  // type 5 on newer Mumble servers
     private static final short MSG_CHANNEL_STATE = 7;
     private static final short MSG_USER_STATE    = 9;
+    private static final short MSG_TEXT_MESSAGE  = 11;
     private static final short MSG_UDP_TUNNEL    = 1;
-    //private static final short MSG_CODEC_VERSION = 21;
     private static final short MSG_CODEC_VERSION = 21;
     private static final short MSG_PERMISSION_QUERY = 20;
     private static final short MSG_SUGGEST_CONFIG   = 24;
@@ -138,7 +145,7 @@ public class MumbleBroadcaster extends AbstractAudioBroadcaster<MumbleConfigurat
     private ScheduledFuture<?> mEncoderFuture;
     private Thread             mReaderThread;
 
-    /** Session ID assigned by the server (needed for channel join). */
+    /** Session ID assigned by the server (needed for channel join and text messages). */
     private volatile int mSessionId = -1;
     /** Channel ID to join (resolved after we receive ChannelState messages). */
     private volatile int mTargetChannelId = -1;
@@ -146,13 +153,16 @@ public class MumbleBroadcaster extends AbstractAudioBroadcaster<MumbleConfigurat
     // ---- Audio pipeline ----
     private final LinkedTransferQueue<float[]> mAudioQueue = new LinkedTransferQueue<>();
     private OpusEncoder mOpusEncoder;
-    private short[] mResampleBuffer   = new short[FRAME_SIZE_SAMPLES];
+    private short[] mResampleBuffer    = new short[FRAME_SIZE_SAMPLES];
     private int     mResampleBufferPos = 0;
     private short   mPreviousSample    = 0;
     private byte[]  mOpusOutputBuffer  = new byte[1275];
 
     /** Guards the resampler / encoder state between the encoder task and stopRealTimeStream(). */
     private final Object mAudioLock = new Object();
+
+    // ---- Vosk Speech-to-Text ----
+    private VoskTranscriber mVoskTranscriber;
 
     // ========================================================================
     // Constructor
@@ -163,6 +173,19 @@ public class MumbleBroadcaster extends AbstractAudioBroadcaster<MumbleConfigurat
     {
         super(configuration);
         mAliasModel = aliasModel;
+
+        // Initialize Vosk transcriber if a model path is configured
+        if(configuration.hasVoskModel())
+        {
+            mVoskTranscriber = new VoskTranscriber(configuration.getVoskModelPath());
+            ThreadPool.CACHED.submit(() -> {
+                boolean loaded = mVoskTranscriber.loadModel();
+                if(loaded)
+                    mLog.info("{}Vosk STT ready", tag());
+                else
+                    mLog.warn("{}Vosk STT failed to load -- STT disabled", tag());
+            });
+        }
     }
 
     // ========================================================================
@@ -224,6 +247,12 @@ public class MumbleBroadcaster extends AbstractAudioBroadcaster<MumbleConfigurat
         mReconnecting.set(false);
         disconnect();
         setBroadcastState(BroadcastState.DISCONNECTED);
+
+        if(mVoskTranscriber != null)
+        {
+            mVoskTranscriber.dispose();
+            mVoskTranscriber = null;
+        }
     }
 
     @Override
@@ -268,6 +297,18 @@ public class MumbleBroadcaster extends AbstractAudioBroadcaster<MumbleConfigurat
         mPreviousSample    = 0;
         mAudioQueue.clear();
 
+        // Send radio ID / talkgroup as text message at start of transmission
+        if(identifiers != null)
+        {
+            sendTransmissionTextMessage(identifiers);
+        }
+
+        // Start Vosk transcription for this transmission
+        if(mVoskTranscriber != null && mVoskTranscriber.isReady())
+        {
+            mVoskTranscriber.startTransmission();
+        }
+
         if(mEncoderFuture == null || mEncoderFuture.isDone())
         {
             mEncoderFuture = ThreadPool.SCHEDULED.scheduleAtFixedRate(
@@ -280,7 +321,16 @@ public class MumbleBroadcaster extends AbstractAudioBroadcaster<MumbleConfigurat
     @Override
     public void receiveRealTimeAudio(float[] audioBuffer)
     {
-        if(mStreamActive.get()) mAudioQueue.offer(audioBuffer);
+        if(mStreamActive.get())
+        {
+            mAudioQueue.offer(audioBuffer);
+
+            // Feed to Vosk in parallel -- same 8kHz float buffers, no copy needed
+            if(mVoskTranscriber != null && mVoskTranscriber.isReady())
+            {
+                mVoskTranscriber.acceptAudio(audioBuffer);
+            }
+        }
     }
 
     @Override
@@ -289,6 +339,16 @@ public class MumbleBroadcaster extends AbstractAudioBroadcaster<MumbleConfigurat
         if(!mStreamActive.get()) return;
 
         mStreamActive.set(false);
+
+        // Get STT transcript and send as text message (async so it doesn't block audio cleanup)
+        if(mVoskTranscriber != null && mVoskTranscriber.isReady())
+        {
+            final String transcript = mVoskTranscriber.stopTransmission();
+            if(transcript != null && !transcript.isBlank())
+            {
+                ThreadPool.CACHED.submit(() -> sendSttTextMessage(transcript));
+            }
+        }
 
         if(mEncoderFuture != null) { mEncoderFuture.cancel(false); mEncoderFuture = null; }
 
@@ -301,7 +361,7 @@ public class MumbleBroadcaster extends AbstractAudioBroadcaster<MumbleConfigurat
         incrementStreamedAudioCount();
         broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_STREAMED_COUNT_CHANGE));
         mAudioQueue.clear();
-        mLog.info("{}Mumble stream stopped", tag());
+        mLog.info("{}Stream stopped", tag());
     }
 
     // ========================================================================
@@ -329,7 +389,7 @@ public class MumbleBroadcaster extends AbstractAudioBroadcaster<MumbleConfigurat
 
     /**
      * Upsample 8 kHz float audio to 16 kHz signed-short via linear interpolation,
-     * accumulate into the 960-sample frame buffer, and Opus-encode full frames.
+     * accumulate into the frame buffer, and Opus-encode full frames.
      */
     private void processAudioBuffer(float[] audio8k)
     {
@@ -387,7 +447,7 @@ public class MumbleBroadcaster extends AbstractAudioBroadcaster<MumbleConfigurat
         catch(ArrayIndexOutOfBoundsException | AssertionError e)
         {
             // Concentus internal resampler can enter a bad state on certain frame
-            // size / sample rate combinations. Reset position and reinitialize encoder.
+            // size / sample rate combinations. Reset and reinitialize encoder.
             mLog.warn("{}Opus encoder state error - reinitializing ({})", tag(), e.getMessage());
             mResampleBufferPos = 0;
             try { initOpusEncoder(); }
@@ -439,40 +499,39 @@ public class MumbleBroadcaster extends AbstractAudioBroadcaster<MumbleConfigurat
         ThreadPool.SCHEDULED.schedule(() -> {
             try
             {
-                //SSLContext ssl = SSLContext.getInstance("TLS");
-                //ssl.init(null, new TrustManager[]{new PermissiveTrustManager()}, null);
+                // Try TLS first, fall back to plain TCP for servers without certificates
+                try
+                {
+                    SSLContext ssl = SSLContext.getInstance("TLS");
+                    ssl.init(null, new TrustManager[]{new PermissiveTrustManager()}, null);
+                    mSocket = ssl.getSocketFactory().createSocket(host, port);
+                    mLog.info("{}Connected via TLS", tag());
+                }
+                catch(Exception tlsEx)
+                {
+                    mLog.info("{}TLS failed ({}), retrying with plain TCP", tag(), tlsEx.getMessage());
+                    mSocket = new Socket(host, port);
+                    mLog.info("{}Connected via plain TCP", tag());
+                }
 
-                //mSocket = ssl.getSocketFactory().createSocket(host, port);
-try
-{
-    SSLContext ssl = SSLContext.getInstance("TLS");
-    ssl.init(null, new TrustManager[]{new PermissiveTrustManager()}, null);
-    mSocket = ssl.getSocketFactory().createSocket(host, port);
-    mLog.info("{}Connected via TLS", tag());
-}
-catch(Exception tlsEx)
-{
-    mLog.info("{}TLS failed ({}), retrying with plain TCP", tag(), tlsEx.getMessage());
-    mSocket = new java.net.Socket(host, port);
-    mLog.info("{}Connected via plain TCP", tag());
-}
+
                 mSocket.setTcpNoDelay(true);
                 mSocket.setSoTimeout(0);
 
                 mOut = new DataOutputStream(mSocket.getOutputStream());
                 mIn  = new DataInputStream(mSocket.getInputStream());
 
-                // START READER FIRST before sending anything, so we don't miss
-		// the server's immediate response burst including ServerSync
-		mReaderThread = new Thread(this::readLoop, "Mumble-Reader");
+                // Start reader BEFORE sending handshake so we don't miss the
+                // server's immediate response burst which includes ServerSync
+                mReaderThread = new Thread(this::readLoop, "Mumble-Reader");
                 mReaderThread.setDaemon(true);
                 mReaderThread.start();
 
                 mPingFuture = ThreadPool.SCHEDULED.scheduleAtFixedRate(
-                    this::sendPing, 5, 5, TimeUnit.SECONDS);
+                    this::sendPing, 5, 15, TimeUnit.SECONDS);
 
-                // Now send handshake — reader is already listening
-		sendVersion();
+                // Now send handshake -- reader is already listening
+                sendVersion();
                 sendAuthenticate();
 
                 mReconnecting.set(false);
@@ -556,7 +615,7 @@ catch(Exception tlsEx)
 
     private void handleControlMessage(short type, byte[] payload)
     {
-	mLog.debug("{}Message type={} length={}", tag(), type, payload.length);
+        mLog.debug("{}Message type={} length={}", tag(), type, payload.length);
         try
         {
             if(type == MSG_SERVER_SYNC)
@@ -577,7 +636,11 @@ catch(Exception tlsEx)
             {
                 mLog.debug("{}Mumble CodecVersion received", tag());
             }
-            // All other message types ignored
+            else if(type == MSG_PING)
+            {
+                mLog.debug("{}Ping response received", tag());
+            }
+            // All other message types (permissions, user lists, text, etc.) ignored
         }
         catch(Exception e)
         {
@@ -657,15 +720,132 @@ catch(Exception tlsEx)
         if(!mConnected.get()) return;
         try
         {
+            // Control channel ping -- keeps TCP connection alive
             Ping ping = Ping.newBuilder()
                 .setTimestamp(System.currentTimeMillis())
                 .build();
             sendControlMessage(MSG_PING, ping.toByteArray());
+
+            // Voice subsystem ping -- resets server-side idle timer
+            // Audio type 5 = ping, target 0
+            byte[] varTs = encodeVarint(System.currentTimeMillis());
+            byte[] voicePing = new byte[1 + varTs.length];
+            voicePing[0] = (byte)((5 << 5) | 0);
+            System.arraycopy(varTs, 0, voicePing, 1, varTs.length);
+            sendControlMessage(MSG_UDP_TUNNEL, voicePing);
         }
         catch(Exception e)
         {
             mLog.error("{}Mumble ping error", tag(), e);
         }
+    }
+
+    /**
+     * Sends a plain-text Mumble channel message with the FROM radio ID and TO talkgroup
+     * at the start of each transmission. If the alias model has a name for either
+     * identifier it is appended in parentheses.
+     *
+     * TextMessage protobuf fields used:
+     *   field 1 (actor):      uint32 = our session ID
+     *   field 3 (channel_id): uint32 = target channel ID
+     *   field 5 (message):    string = plain text
+     */
+    private void sendTransmissionTextMessage(IdentifierCollection identifiers)
+    {
+        try
+        {
+            Identifier from = identifiers.getFromIdentifier();
+            Identifier to   = identifiers.getToIdentifier();
+
+            StringBuilder sb = new StringBuilder();
+
+            if(from != null)
+            {
+                sb.append("From: ").append(from.toString());
+                if(mAliasModel != null)
+                {
+                    AliasList aliasList = mAliasModel.getAliasList(identifiers);
+                    if(aliasList != null)
+                    {
+                        List<Alias> aliases = aliasList.getAliases(from);
+                        if(aliases != null && !aliases.isEmpty())
+                            sb.append(" (").append(aliases.get(0).getName()).append(")");
+                    }
+                }
+            }
+
+            if(to != null)
+            {
+                if(sb.length() > 0) sb.append(" -> ");
+                sb.append("To: ").append(to.toString());
+                if(mAliasModel != null)
+                {
+                    AliasList aliasList = mAliasModel.getAliasList(identifiers);
+                    if(aliasList != null)
+                    {
+                        List<Alias> aliases = aliasList.getAliases(to);
+                        if(aliases != null && !aliases.isEmpty())
+                            sb.append(" (").append(aliases.get(0).getName()).append(")");
+                    }
+                }
+            }
+
+            if(sb.length() > 0)
+            {
+                sendTextMessage(sb.toString());
+                mLog.debug("{}Transmission text sent: {}", tag(), sb);
+            }
+        }
+        catch(Exception e)
+        {
+            mLog.warn("{}Failed to send transmission text message", tag(), e);
+        }
+    }
+
+    /**
+     * Sends the Vosk STT transcript as a plain-text Mumble channel message
+     * at the end of each transmission.
+     */
+    private void sendSttTextMessage(String transcript)
+    {
+        try
+        {
+            sendTextMessage("STT: " + transcript);
+            mLog.debug("{}STT message sent: {}", tag(), transcript);
+        }
+        catch(Exception e)
+        {
+            mLog.warn("{}Failed to send STT text message", tag(), e);
+        }
+    }
+
+    /**
+     * Sends a plain-text message to the current Mumble channel.
+     *
+     * TextMessage protobuf (hand-encoded, no protobuf library needed for sending):
+     *   field 1 (actor):      uint32 = session ID
+     *   field 3 (channel_id): uint32 = channel ID
+     *   field 5 (message):    string = text content
+     */
+    private void sendTextMessage(String text) throws IOException
+    {
+        if(!mConnected.get()) return;
+
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+
+        if(mSessionId >= 0)
+        {
+            writeProtoVarint(buf, makeTag(1, 0));
+            writeProtoVarint(buf, mSessionId);
+        }
+
+        int channelId = (mTargetChannelId >= 0) ? mTargetChannelId : 0;
+        writeProtoVarint(buf, makeTag(3, 0));
+        writeProtoVarint(buf, channelId);
+
+        writeProtoString(buf, 5, text);
+
+        sendControlMessage(MSG_TEXT_MESSAGE, buf.toByteArray());
     }
 
     private synchronized void sendControlMessage(short type, byte[] payload) throws IOException
@@ -714,7 +894,37 @@ catch(Exception tlsEx)
     }
 
     // ========================================================================
-    // Mumble varint encoding
+    // Protobuf encoding helpers (for hand-encoded TextMessage)
+    // ========================================================================
+
+    /** Make a protobuf field tag: (fieldNumber << 3) | wireType */
+    private static long makeTag(int fieldNumber, int wireType)
+    {
+        return ((long)fieldNumber << 3) | wireType;
+    }
+
+    /** Write a protobuf varint to a ByteArrayOutputStream. */
+    private static void writeProtoVarint(ByteArrayOutputStream out, long value)
+    {
+        while((value & ~0x7FL) != 0)
+        {
+            out.write((int)((value & 0x7F) | 0x80));
+            value >>>= 7;
+        }
+        out.write((int)value);
+    }
+
+    /** Write a protobuf length-delimited string field. */
+    private static void writeProtoString(ByteArrayOutputStream out, int fieldNumber, String value)
+    {
+        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        writeProtoVarint(out, makeTag(fieldNumber, 2));
+        writeProtoVarint(out, bytes.length);
+        out.write(bytes, 0, bytes.length);
+    }
+
+    // ========================================================================
+    // Mumble varint encoding (for voice packet sequence/length fields)
     // ========================================================================
 
     private static byte[] encodeVarint(long value)
@@ -753,7 +963,7 @@ catch(Exception tlsEx)
                 (byte)0xF0,
                 (byte)((value >> 24) & 0xFF),
                 (byte)((value >> 16) & 0xFF),
-                (byte)((value >> 8) & 0xFF),
+                (byte)((value >> 8)  & 0xFF),
                 (byte)(value & 0xFF)
             };
         }
